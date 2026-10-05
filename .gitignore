@@ -5,12 +5,7 @@
 .cache
 /conf/*
 !/conf/dist
-/modules/*
-!/modules/*.md
-!/modules/*.sh
-!/modules/CMakeLists.txt
-!/modules/*.h
-!/modules/*.cmake
+# modules tracked individually — no global ignore
 /build*/
 /var/*
 !/var/build/.gitkeep
