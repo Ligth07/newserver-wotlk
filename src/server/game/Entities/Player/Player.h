@@ -1454,7 +1454,7 @@ public:
     bool CanSeeStartQuest(Quest const* quest);
     bool CanTakeQuest(Quest const* quest, bool msg);
     bool CanAddQuest(Quest const* quest, bool msg);
-    bool CanCompleteQuest(uint32 quest_id, QuestStatusData const* q_savedStatus = nullptr);
+    bool CanCompleteQuest(uint32 quest_id, QuestStatusData const* q_savedStatus = nullptr, bool skipGuildCheck = false);
     bool CanCompleteRepeatableQuest(Quest const* quest);
     bool CanRewardQuest(Quest const* quest, bool msg);
     bool CanRewardQuest(Quest const* quest, uint32 reward, bool msg);
@@ -1563,6 +1563,7 @@ public:
     void SendQuestComplete(uint32 quest_id);
     void SendQuestReward(Quest const* quest, uint32 XP);
     void SendQuestFailed(uint32 questId, InventoryResult reason = EQUIP_ERR_OK);
+    void SendQuestUpdateFailed(uint32 questId);
     void SendQuestTimerFailed(uint32 quest_id);
     void SendCanTakeQuestResponse(QuestFailedReason msg) const;
     void SendQuestConfirmAccept(Quest const* quest, Player* pReceiver);
@@ -1929,6 +1930,7 @@ public:
     void SetGuildIdInvited(uint32 GuildId) { m_GuildIdInvited = GuildId; }
     [[nodiscard]] uint32 GetGuildId() const { return GetUInt32Value(PLAYER_GUILDID);  }
     [[nodiscard]] Guild* GetGuild() const;
+    [[nodiscard]] bool HasGuildMembersInGroup(uint8 required) const;
     uint32 GetGuildIdInvited() { return m_GuildIdInvited; }
     static void RemovePetitionsAndSigns(ObjectGuid guid, uint32 type);
 

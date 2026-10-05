@@ -288,7 +288,7 @@ bool Player::CanAddQuest(Quest const* quest, bool msg)
     return true;
 }
 
-bool Player::CanCompleteQuest(uint32 quest_id, QuestStatusData const* q_savedStatus)
+bool Player::CanCompleteQuest(uint32 quest_id, QuestStatusData const* q_savedStatus, bool skipGuildCheck)
 {
     if (quest_id)
     {
@@ -358,6 +358,20 @@ bool Player::CanCompleteQuest(uint32 quest_id, QuestStatusData const* q_savedSta
             uint32 repFacId = qInfo->GetRepObjectiveFaction();
             if (repFacId && GetReputationMgr().GetReputation(repFacId) < qInfo->GetRepObjectiveValue())
                 return false;
+
+            if (!skipGuildCheck && qInfo->IsGuildQuest())
+            {
+                if (!GetGuildId())
+                    return false;
+
+                if (qInfo->GetRequiredGuildMembers() > 0)
+                {
+                    if (!GetGroup())
+                        return false;
+                    if (!HasGuildMembersInGroup(qInfo->GetRequiredGuildMembers()))
+                        return false;
+                }
+            }
 
             return true;
         }
@@ -938,7 +952,7 @@ void Player::FailQuest(uint32 questId)
             SendQuestTimerFailed(questId);
         }
         else
-            SendQuestFailed(questId);
+            SendQuestUpdateFailed(questId);
 
         // Destroy quest items on quest failure.
         for (uint8 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)
@@ -1884,7 +1898,13 @@ void Player::AreaExploredOrEventHappens(uint32 questId)
         if (CanCompleteQuest(questId, q_status))
             CompleteQuest(questId);
         else
-            AdditionalSavingAddMask(ADDITIONAL_SAVING_QUEST_STATUS);
+        {
+            Quest const* qInfo = sObjectMgr->GetQuestTemplate(questId);
+            if (qInfo && qInfo->IsGuildQuest() && CanCompleteQuest(questId, nullptr, true))
+                FailQuest(questId);
+            else
+                AdditionalSavingAddMask(ADDITIONAL_SAVING_QUEST_STATUS);
+        }
     }
 }
 
@@ -1938,7 +1958,12 @@ void Player::ItemAddedQuestCheck(uint32 entry, uint32 count)
                 if (CanCompleteQuest(questid))
                     CompleteQuest(questid);
                 else
-                    AdditionalSavingAddMask(ADDITIONAL_SAVING_INVENTORY_AND_GOLD | ADDITIONAL_SAVING_QUEST_STATUS);
+                {
+                    if (qInfo->IsGuildQuest() && CanCompleteQuest(questid, nullptr, true))
+                        FailQuest(questid);
+                    else
+                        AdditionalSavingAddMask(ADDITIONAL_SAVING_INVENTORY_AND_GOLD | ADDITIONAL_SAVING_QUEST_STATUS);
+                }
             }
         }
     }
@@ -2055,7 +2080,12 @@ void Player::KilledMonsterCredit(uint32 entry, ObjectGuid guid)
                         if (CanCompleteQuest(questid))
                             CompleteQuest(questid);
                         else
-                            AdditionalSavingAddMask(ADDITIONAL_SAVING_QUEST_STATUS);
+                        {
+                            if (qInfo->IsGuildQuest() && CanCompleteQuest(questid, nullptr, true))
+                                FailQuest(questid);
+                            else
+                                AdditionalSavingAddMask(ADDITIONAL_SAVING_QUEST_STATUS);
+                        }
 
                         // same objective target can be in many active quests, but not in 2 objectives for single quest (code optimization).
                         break;
@@ -2122,9 +2152,9 @@ void Player::KilledPlayerCreditForQuest(uint16 count, Quest const* quest)
     }
 
     if (CanCompleteQuest(questId))
-    {
         CompleteQuest(questId);
-    }
+    else if (quest->IsGuildQuest() && CanCompleteQuest(questId, nullptr, true))
+        FailQuest(questId);
 }
 
 void Player::KillCreditGO(uint32 entry, ObjectGuid guid)
@@ -2173,7 +2203,12 @@ void Player::KillCreditGO(uint32 entry, ObjectGuid guid)
                     if (CanCompleteQuest(questid))
                         CompleteQuest(questid);
                     else
-                        AdditionalSavingAddMask(ADDITIONAL_SAVING_QUEST_STATUS);
+                    {
+                        if (qInfo->IsGuildQuest() && CanCompleteQuest(questid, nullptr, true))
+                            FailQuest(questid);
+                        else
+                            AdditionalSavingAddMask(ADDITIONAL_SAVING_QUEST_STATUS);
+                    }
 
                     // same objective target can be in many active quests, but not in 2 objectives for single quest (code optimization).
                     break;
@@ -2231,7 +2266,12 @@ void Player::TalkedToCreature(uint32 entry, ObjectGuid guid)
                         if (CanCompleteQuest(questid))
                             CompleteQuest(questid);
                         else
-                            AdditionalSavingAddMask(ADDITIONAL_SAVING_QUEST_STATUS);
+                        {
+                            if (qInfo->IsGuildQuest() && CanCompleteQuest(questid, nullptr, true))
+                                FailQuest(questid);
+                            else
+                                AdditionalSavingAddMask(ADDITIONAL_SAVING_QUEST_STATUS);
+                        }
 
                         // same objective target can be in many active quests, but not in 2 objectives for single quest (code optimization).
                         continue;
@@ -2262,9 +2302,9 @@ void Player::MoneyChanged(uint32 count)
                     if (int32(count) >= -rewOrReqMoney)
                     {
                         if (CanCompleteQuest(questid))
-                        {
                             CompleteQuest(questid);
-                        }
+                        else if (qInfo->IsGuildQuest() && CanCompleteQuest(questid, nullptr, true))
+                            FailQuest(questid);
                     }
                 }
                 else if (q_status.Status == QUEST_STATUS_COMPLETE)
@@ -2293,8 +2333,12 @@ void Player::ReputationChanged(FactionEntry const* factionEntry)
                     if (q_status.Status == QUEST_STATUS_INCOMPLETE)
                     {
                         if (GetReputationMgr().GetReputation(factionEntry) >= qInfo->GetRepObjectiveValue())
+                        {
                             if (CanCompleteQuest(questid))
                                 CompleteQuest(questid);
+                            else if (qInfo->IsGuildQuest() && CanCompleteQuest(questid, nullptr, true))
+                                FailQuest(questid);
+                        }
                     }
                     else if (q_status.Status == QUEST_STATUS_COMPLETE)
                     {
@@ -2321,8 +2365,12 @@ void Player::ReputationChanged2(FactionEntry const* factionEntry)
                     if (q_status.Status == QUEST_STATUS_INCOMPLETE)
                     {
                         if (GetReputationMgr().GetReputation(factionEntry) >= qInfo->GetRepObjectiveValue2())
+                        {
                             if (CanCompleteQuest(questid))
                                 CompleteQuest(questid);
+                            else if (qInfo->IsGuildQuest() && CanCompleteQuest(questid, nullptr, true))
+                                FailQuest(questid);
+                        }
                     }
                     else if (q_status.Status == QUEST_STATUS_COMPLETE)
                     {
@@ -2459,6 +2507,17 @@ void Player::SendQuestFailed(uint32 questId, InventoryResult reason)
     questGiverQuestFailed.FailureReason = reason; // failed reason (valid reasons: 4, 16, 50, 17, 74, other values show default message)
     SendDirectMessage(questGiverQuestFailed.Write());
     LOG_DEBUG("network", "WORLD: Sent SMSG_QUESTGIVER_QUEST_FAILED");
+}
+
+void Player::SendQuestUpdateFailed(uint32 questId)
+{
+    if (questId)
+    {
+        WorldPacket data(SMSG_QUESTUPDATE_FAILED, 4);
+        data << uint32(questId);
+        SendDirectMessage(&data);
+        LOG_DEBUG("network", "WORLD: Sent SMSG_QUESTUPDATE_FAILED quest = {}", questId);
+    }
 }
 
 void Player::SendQuestTimerFailed(uint32 quest_id)
