@@ -17,7 +17,7 @@
 /e2e/.env
 /apps/joiner
 /deps/deno
-/data/sql/custom/*
+# custom SQL tracked — no ignore
 /src/server/scripts/Custom/*
 !/src/server/scripts/Custom/README.md
 
