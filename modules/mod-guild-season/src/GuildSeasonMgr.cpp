@@ -450,8 +450,8 @@ void GuildSeasonMgr::LoadSeasonConfig()
 
     // Cargar premios de la temporada actual
     QueryResult prizes = CharacterDatabase.Query(
-        "SELECT Rank, ItemEntry, ItemCount FROM guild_season_prizes "
-        "WHERE SeasonId = {} ORDER BY Rank, ItemEntry",
+        "SELECT `Rank`, ItemEntry, ItemCount FROM guild_season_prizes "
+        "WHERE SeasonId = {} ORDER BY `Rank`, ItemEntry",
         _currentSeason);
 
     if (prizes)
