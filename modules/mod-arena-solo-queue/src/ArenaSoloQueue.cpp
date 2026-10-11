@@ -2,19 +2,20 @@
  * mod-arena-solo-queue
  *
  * Allows players to queue for rated arenas without being in a pre-formed group:
- *   - Solo queue: player joins alone; the module pairs compatible solos and creates
- *     a temporary group that enters the standard rated queue.
+ *   - Solo queue: player joins alone; the module pairs arenaType solos into one
+ *     side and adds that side to the standard rated BG queue; the matchmaker then
+ *     finds the opposing team normally (another solo-paired group or a regular group).
  *   - Cross-team group: two players from different arena teams can form a group
- *     and queue together for rated arenas; each member only needs to have their own
- *     team registered for the requested bracket.
+ *     and queue together; each member only needs their own team for the bracket.
  *
  * Core hooks used:
  *   PlayerScript::OnArenaQueueHandleSoloRated  (BattleGroundHandler.cpp)
  *   GroupScript::OnArenaQueueAllowCrossTeamGroup (Group.cpp)
  *
- * Known Phase-1 limitation: when solo-queued players from different teams win/lose,
- * only the "leader" team's rating is updated by the core arena system. Personal rating
- * and MMR for all players still update correctly via MemberWon/MemberLost.
+ * Player command: .arena2v2  (join/leave toggle)
+ *
+ * Phase-1 limitation: only the lead team's rating updates after the match;
+ * personal rating and MMR for all players update correctly.
  */
 
 #include "ArenaSeasonMgr.h"
@@ -23,6 +24,7 @@
 #include "BattlegroundMgr.h"
 #include "BattlegroundQueue.h"
 #include "Chat.h"
+#include "CommandScript.h"
 #include "GameTime.h"
 #include "Group.h"
 #include "GroupMgr.h"
@@ -36,6 +38,12 @@
 #include <map>
 #include <set>
 #include <vector>
+
+using namespace Acore::ChatCommands;
+
+// RBAC permission id for the .arena2v2 command.
+// Must match the SQL inserted in data/sql/db-auth/rbac_arena_solo_queue.sql.
+static constexpr uint32 RBAC_PERM_COMMAND_ARENA_SOLO_QUEUE = 1000;
 
 // ---------------------------------------------------------------------------
 // Data
@@ -87,7 +95,7 @@ public:
             return false;
         }
 
-        if (_IsPending(player->GetGUID(), arenaslot))
+        if (IsPlayerPending(player->GetGUID(), arenaslot))
         {
             ChatHandler(player->GetSession()).PSendSysMessage("You are already in the solo arena queue for this bracket.");
             return false;
@@ -131,6 +139,14 @@ public:
         }
     }
 
+    bool IsPlayerPending(ObjectGuid guid, uint8 slot) const
+    {
+        for (auto const& e : _pending[slot])
+            if (e.playerGuid == guid)
+                return true;
+        return false;
+    }
+
     void Update()
     {
         static constexpr uint8 arenaTypes[SOLO_QUEUE_SLOT_COUNT] = {
@@ -146,19 +162,11 @@ private:
 
     std::list<SoloPendingEntry> _pending[SOLO_QUEUE_SLOT_COUNT];
 
-    bool _IsPending(ObjectGuid guid, uint8 slot) const
-    {
-        for (auto const& e : _pending[slot])
-            if (e.playerGuid == guid)
-                return true;
-        return false;
-    }
-
     void _TryPairSlot(uint8 slot, uint8 arenaType)
     {
         auto& list = _pending[slot];
 
-        // Remove stale entries (offline / already queued)
+        // Remove stale entries (offline / already queued / already in BG)
         list.erase(
             std::remove_if(list.begin(), list.end(), [](SoloPendingEntry const& e)
             {
@@ -167,8 +175,10 @@ private:
             }),
             list.end());
 
-        // Need at least 2*arenaType solos for one full match
-        if (list.size() < static_cast<size_t>(arenaType * 2))
+        // Need at least arenaType solos to form ONE side; the matchmaker pairs
+        // that side against whatever team is already waiting in the rated queue
+        // (another solo pair, a regular group, or a cross-team group).
+        if (list.size() < static_cast<size_t>(arenaType))
             return;
 
         // Group by level bracket
@@ -178,7 +188,7 @@ private:
 
         for (auto& [bracket, entries] : byBracket)
         {
-            if (entries.size() < static_cast<size_t>(arenaType * 2))
+            if (entries.size() < static_cast<size_t>(arenaType))
                 continue;
 
             // FIFO order
@@ -186,15 +196,16 @@ private:
                 [](SoloPendingEntry const* a, SoloPendingEntry const* b)
                 { return a->joinTime < b->joinTime; });
 
-            std::vector<SoloPendingEntry*> sideA(entries.begin(),            entries.begin() + arenaType);
-            std::vector<SoloPendingEntry*> sideB(entries.begin() + arenaType, entries.begin() + arenaType * 2);
+            // Take the first arenaType solos as one side and enter the BG queue.
+            // Forming only one side avoids the bug where two members of the same
+            // arena team could end up on opposite sides (which the BG matchmaker
+            // would then refuse to pair, leaving them stuck forever).
+            std::vector<SoloPendingEntry*> side(entries.begin(), entries.begin() + arenaType);
 
-            bool ok = _QueueSide(sideA, slot, arenaType) && _QueueSide(sideB, slot, arenaType);
-            if (ok)
+            if (_QueueSide(side, slot, arenaType))
             {
                 std::set<ObjectGuid> paired;
-                for (auto* e : sideA) paired.insert(e->playerGuid);
-                for (auto* e : sideB) paired.insert(e->playerGuid);
+                for (auto* e : side) paired.insert(e->playerGuid);
 
                 list.erase(
                     std::remove_if(list.begin(), list.end(),
@@ -241,7 +252,7 @@ private:
         BattlegroundQueueTypeId queueTypeId = BattlegroundMgr::BGQueueTypeId(bgTypeId, arenaType);
         BattlegroundQueue&      bgQueue     = sBattlegroundMgr->GetBattlegroundQueue(queueTypeId);
 
-        // Build a temporary group when the side has more than one player
+        // Build a temporary in-game group when the side has more than one player
         Group* tempGroup = nullptr;
         if (side.size() > 1)
         {
@@ -286,10 +297,10 @@ private:
                 avgWait, 0, arenaType, TEAM_NEUTRAL, true);
             member->SendDirectMessage(&data);
 
-            ChatHandler(member->GetSession()).PSendSysMessage("Partner found! Joined rated arena queue as a pair.");
+            ChatHandler(member->GetSession()).PSendSysMessage("Partner found! Joined rated 2v2 arena queue.");
 
             LOG_DEBUG("bg.battleground",
-                "ArenaSoloQueue: player {} joined rated arena queue slot {} via solo-queue pairing",
+                "ArenaSoloQueue: player {} queued for rated arena slot {} via solo-queue pairing",
                 member->GetName(), arenaslot);
         }
 
@@ -301,7 +312,7 @@ private:
 #define sArenaSoloQueueMgr ArenaSoloQueueMgr::Instance()
 
 // ---------------------------------------------------------------------------
-// WorldScript — periodic pairing check
+// WorldScript — periodic pairing check (every 5 s)
 // ---------------------------------------------------------------------------
 
 class ArenaSoloQueueWorld : public WorldScript
@@ -353,10 +364,46 @@ public:
 
     bool OnArenaQueueAllowCrossTeamGroup(Group const* /*group*/, Player* member, uint32 arenaSlot) override
     {
-        // Require the member to have their own registered arena team for this slot
         uint32 teamId = member->GetArenaTeamId(arenaSlot);
         ArenaTeam* team = sArenaTeamMgr->GetArenaTeamById(teamId);
         return team && team->IsMember(member->GetGUID());
+    }
+};
+
+// ---------------------------------------------------------------------------
+// CommandScript — .arena2v2 (join/leave toggle, available to all players)
+// ---------------------------------------------------------------------------
+
+class ArenaSoloQueueCommand : public CommandScript
+{
+public:
+    ArenaSoloQueueCommand() : CommandScript("ArenaSoloQueueCommand") {}
+
+    ChatCommandTable GetCommands() const override
+    {
+        static ChatCommandTable commandTable =
+        {
+            { "arena2v2", HandleArena2v2Command, static_cast<rbac::RBACPermissions>(RBAC_PERM_COMMAND_ARENA_SOLO_QUEUE), Console::No },
+        };
+        return commandTable;
+    }
+
+    static bool HandleArena2v2Command(ChatHandler* handler, Optional<std::string_view> /*args*/)
+    {
+        Player* player = handler->GetSession()->GetPlayer();
+        if (!player)
+            return false;
+
+        // Toggle: leave if already in the solo pending queue
+        if (sArenaSoloQueueMgr.IsPlayerPending(player->GetGUID(), 0))
+        {
+            sArenaSoloQueueMgr.RemovePlayer(player->GetGUID());
+            handler->PSendSysMessage("Left the solo rated 2v2 arena queue.");
+            return true;
+        }
+
+        sArenaSoloQueueMgr.AddSolo(player, 0 /* slot 0 = 2v2 */);
+        return true;
     }
 };
 
@@ -369,4 +416,5 @@ void AddArenaSoloQueueScripts()
     new ArenaSoloQueueWorld();
     new ArenaSoloQueuePlayer();
     new ArenaSoloQueueGroup();
+    new ArenaSoloQueueCommand();
 }
