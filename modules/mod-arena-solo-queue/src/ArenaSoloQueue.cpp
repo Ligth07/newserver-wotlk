@@ -162,6 +162,45 @@ private:
 
     std::list<SoloPendingEntry> _pending[SOLO_QUEUE_SLOT_COUNT];
 
+    // Returns arenaType entries that should form one side.
+    // Prefers grouping same-team members together so they are never placed on
+    // opposite sides of a match.
+    static std::vector<SoloPendingEntry*> _BuildSide(
+        std::vector<SoloPendingEntry*> const& sorted, uint8 arenaType)
+    {
+        // Fast path: look for arenaType entries that all share the same ArenaTeamId
+        // (e.g. two members of the same 2v2 team both queued solo).
+        std::map<uint32, std::vector<SoloPendingEntry*>> byTeam;
+        for (auto* e : sorted)
+            byTeam[e->arenaTeamId].push_back(e);
+
+        for (auto& [teamId, members] : byTeam)
+        {
+            if (members.size() >= static_cast<size_t>(arenaType))
+                return std::vector<SoloPendingEntry*>(members.begin(), members.begin() + arenaType);
+        }
+
+        // No same-team group large enough: FIFO with the constraint that each
+        // team appears at most once per side (avoid partial-teammate splits).
+        std::vector<SoloPendingEntry*> side;
+        std::set<uint32> usedTeams;
+        for (auto* e : sorted)
+        {
+            if (usedTeams.count(e->arenaTeamId))
+                continue; // skip — this team is already represented on the side
+            side.push_back(e);
+            usedTeams.insert(e->arenaTeamId);
+            if (side.size() == static_cast<size_t>(arenaType))
+                break;
+        }
+
+        // If we couldn't fill the side with distinct teams, fall back to plain FIFO
+        if (side.size() < static_cast<size_t>(arenaType))
+            return std::vector<SoloPendingEntry*>(sorted.begin(), sorted.begin() + arenaType);
+
+        return side;
+    }
+
     void _TryPairSlot(uint8 slot, uint8 arenaType)
     {
         auto& list = _pending[slot];
@@ -196,11 +235,15 @@ private:
                 [](SoloPendingEntry const* a, SoloPendingEntry const* b)
                 { return a->joinTime < b->joinTime; });
 
-            // Take the first arenaType solos as one side and enter the BG queue.
-            // Forming only one side avoids the bug where two members of the same
-            // arena team could end up on opposite sides (which the BG matchmaker
-            // would then refuse to pair, leaving them stuck forever).
-            std::vector<SoloPendingEntry*> side(entries.begin(), entries.begin() + arenaType);
+            // Build one side. Same-team members must always end up on the SAME side:
+            // if we let FIFO split teammates onto opposite sides the BG matchmaker
+            // would either pair them against each other (ArenaTeamId == ArenaTeamId
+            // check fails → stuck forever) or put team-mates on opposite sides of
+            // an arena match, which is wrong gameplay-wise.
+            //
+            // Priority rule: if any two entries share an ArenaTeamId, pair them
+            // together first (they play as a team). Otherwise fall back to FIFO.
+            std::vector<SoloPendingEntry*> side = _BuildSide(entries, arenaType);
 
             if (_QueueSide(side, slot, arenaType))
             {
