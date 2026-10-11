@@ -160,6 +160,7 @@ public: /* ServerScript */
     bool CanPacketReceive(WorldSession* session, WorldPacket const& packet);
     bool CanPacketSend(WorldSession* session, WorldPacket const& packet);
     void OnPacketSent(WorldSession* session, WorldPacket const& packet);
+    void OnCustomOpcode(WorldSession* session, WorldPacket& packet);
 
 public: /* SessionScript */
     void OnSessionUpdate(WorldSession* session, uint32 diff);
@@ -395,6 +396,7 @@ public: /* PlayerScript */
     void OnPlayerAfterGuardianInitStatsForLevel(Player* player, Guardian* guardian);
     void OnPlayerBeforeLoadPetFromDB(Player* player, uint32& petentry, uint32& petnumber, bool& current, bool& forceLoadFromDB);
     bool OnPlayerCanJoinInArenaQueue(Player* player, ObjectGuid BattlemasterGuid, uint8 arenaslot, BattlegroundTypeId BGTypeID, uint8 joinAsGroup, uint8 IsRated, GroupJoinBattlegroundResult& err);
+    void OnArenaQueueHandleSoloRated(Player* player, uint8 arenaslot);
     bool OnPlayerCanBattleFieldPort(Player* player, uint8 arenaType, BattlegroundTypeId BGTypeID, uint8 action);
     bool OnPlayerCanGroupInvite(Player* player, std::string& membername);
     bool OnPlayerCanGroupAccept(Player* player, Group* group);
@@ -528,6 +530,7 @@ public: /* GroupScript */
     void OnGroupDisband(Group* group);
     bool CanGroupJoinBattlegroundQueue(Group const* group, Player* member, Battleground const* bgTemplate, uint32 MinPlayerCount, bool isRated, uint32 arenaSlot);
     void OnCreate(Group* group, Player* leader);
+    bool OnArenaQueueAllowCrossTeamGroup(Group const* group, Player* member, uint32 arenaSlot);
 
 public: /* GlobalScript */
     void OnGlobalItemDelFromDB(CharacterDatabaseTransaction trans, ObjectGuid::LowType itemGuid);

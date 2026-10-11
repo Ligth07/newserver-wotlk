@@ -235,6 +235,7 @@ enum PlayerHook
     PLAYERHOOK_ON_BEFORE_RECEIVE_SPELL_LIST_FROM_TRAINER,
     PLAYERHOOK_ON_GET_TRAINER_SPELL_STATE,
     PLAYERHOOK_ON_AFTER_TRAIN_SPELL,
+    PLAYERHOOK_ARENA_QUEUE_HANDLE_SOLO_RATED,
     PLAYERHOOK_END
 };
 
@@ -525,6 +526,10 @@ public:
     virtual void OnPlayerBeforeLoadPetFromDB(Player* /*player*/, uint32& /*petentry*/, uint32& /*petnumber*/, bool& /*current*/, bool& /*forceLoadFromDB*/) { }
 
     [[nodiscard]] virtual bool OnPlayerCanJoinInArenaQueue(Player* /*player*/, ObjectGuid /*BattlemasterGuid*/, uint8 /*arenaslot*/, BattlegroundTypeId /*BGTypeID*/, uint8 /*joinAsGroup*/, uint8 /*IsRated*/, GroupJoinBattlegroundResult& /*err*/) { return true; }
+
+    // Called when a player attempts to join a rated arena queue alone (isRated=1, asGroup=0).
+    // Modules may use this to implement solo-queue logic. The handler returns immediately after.
+    virtual void OnArenaQueueHandleSoloRated(Player* /*player*/, uint8 /*arenaslot*/) { }
 
     [[nodiscard]] virtual bool OnPlayerCanBattleFieldPort(Player* /*player*/, uint8 /*arenaType*/, BattlegroundTypeId /*BGTypeID*/, uint8 /*action*/) { return true; }
 

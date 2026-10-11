@@ -189,6 +189,7 @@ void Quest::LoadQuestTemplateAddon(Field* fields)
     StartItemCount = fields[16].Get<uint8>();
     RewardMailSenderEntry = fields[17].Get<uint32>();
     SpecialFlags = fields[18].Get<uint32>();
+    RequiredGuildMembers = fields[19].Get<uint8>();
 
     if ((SpecialFlags & QUEST_SPECIAL_FLAGS_AUTO_ACCEPT) && !sWorld->getBoolConfig(CONFIG_QUEST_IGNORE_AUTO_ACCEPT))
     {

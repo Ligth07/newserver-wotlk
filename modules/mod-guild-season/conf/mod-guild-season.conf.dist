@@ -1,0 +1,102 @@
+#
+# mod-guild-season configuration
+#
+
+[worldserver]
+
+###############################################################################
+# GENERAL
+###############################################################################
+#
+#   GuildSeason.Enable
+#       Activa o desactiva el módulo completo.
+#       Default: 1 - Activado
+#                0 - Desactivado
+#
+GuildSeason.Enable = 1
+
+###############################################################################
+# TEMPORADA
+###############################################################################
+#
+#   GuildSeason.Duration.Days
+#       Duración de cada temporada en días.
+#       Al cumplirse, se ejecuta el reset automático.
+#       Default: 30
+#
+GuildSeason.Duration.Days = 30
+
+#
+#   GuildSeason.ResetCheckInterval.Hours
+#       Cada cuántas horas el servidor verifica si toca resetear la temporada.
+#       Default: 1
+#
+GuildSeason.ResetCheckInterval.Hours = 1
+
+#
+#   GuildSeason.AnnounceReset
+#       Anunciar el inicio de nueva temporada a todos los jugadores online.
+#       Default: 1 - Activado
+#                0 - Desactivado
+#
+GuildSeason.AnnounceReset = 1
+
+###############################################################################
+# PUNTOS Y REPUTACIÓN
+###############################################################################
+#
+#   GuildSeason.DailyCap.Points
+#       Máximo de Puntos de Temporada que un jugador puede aportar a su
+#       hermandad por día. 0 = sin límite.
+#       Default: 0
+#
+GuildSeason.DailyCap.Points = 0
+
+#
+#   GuildSeason.ResetRepOnLeave
+#       Resetear la reputación personal del jugador al abandonar la hermandad.
+#       Default: 1 - Activado (comportamiento diseñado)
+#                0 - Desactivado (mantiene la reputación al cambiar de hermandad)
+#
+GuildSeason.ResetRepOnLeave = 1
+
+###############################################################################
+# TABLÓN DE MISIONES
+###############################################################################
+#
+#   GuildSeason.Board.DailyCount
+#       Número de misiones diarias que se muestran en el tablón.
+#       Default: 5
+#
+GuildSeason.Board.DailyCount = 5
+
+#
+#   GuildSeason.Board.WeeklyCount
+#       Número de misiones semanales que se muestran en el tablón.
+#       Default: 2
+#
+GuildSeason.Board.WeeklyCount = 2
+
+###############################################################################
+# VENDOR DE HERMANDAD
+###############################################################################
+#
+#   GuildSeason.Vendor.ItemCount
+#       Número de ítems seleccionados aleatoriamente del pool para cada temporada.
+#       Default: 10
+#
+GuildSeason.Vendor.ItemCount = 10
+
+###############################################################################
+# UMBRALES DE PERKS (pendiente de implementación)
+###############################################################################
+#
+#   GuildSeason.PerkThreshold.N
+#       Puntos de Temporada de Hermandad necesarios para desbloquear el perk N.
+#       Los perks se pierden al resetear la temporada.
+#
+# GuildSeason.PerkThreshold.1 = 5000
+# GuildSeason.PerkThreshold.2 = 15000
+# GuildSeason.PerkThreshold.3 = 35000
+# GuildSeason.PerkThreshold.4 = 75000
+# GuildSeason.PerkThreshold.5 = 150000

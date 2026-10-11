@@ -2184,8 +2184,9 @@ GroupJoinBattlegroundResult Group::CanJoinBattlegroundQueue(Battleground const* 
         if (member->GetTeamId() != teamId && !sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_GROUP))
             return ERR_BATTLEGROUND_JOIN_TIMED_OUT;
 
-        // don't let join rated matches if the arena team id doesn't match
-        if (isRated && member->GetArenaTeamId(arenaSlot) != arenaTeamId)
+        // don't let join rated matches if the arena team id doesn't match, unless a module allows it
+        if (isRated && member->GetArenaTeamId(arenaSlot) != arenaTeamId
+            && !sScriptMgr->OnArenaQueueAllowCrossTeamGroup(this, member, arenaSlot))
             return ERR_BATTLEGROUND_JOIN_FAILED;
 
         // not in the same battleground level braket, don't let join

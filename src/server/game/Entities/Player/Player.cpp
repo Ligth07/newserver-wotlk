@@ -16394,6 +16394,34 @@ Guild* Player::GetGuild() const
     return guildId ? sGuildMgr->GetGuildById(guildId) : nullptr;
 }
 
+bool Player::HasGuildMembersInGroup(uint8 required) const
+{
+    Group const* group = GetGroup();
+    if (!group)
+        return false;
+
+    uint32 guildId = GetGuildId();
+    if (!guildId)
+        return false;
+
+    if (required == 0)
+    {
+        for (GroupReference const* itr = group->GetFirstMember(); itr; itr = itr->next())
+            if (Player const* member = itr->GetSource())
+                if (member->GetGuildId() != guildId)
+                    return false;
+        return true;
+    }
+
+    uint8 count = 0;
+    for (GroupReference const* itr = group->GetFirstMember(); itr; itr = itr->next())
+        if (Player const* member = itr->GetSource())
+            if (member->GetGuildId() == guildId)
+                ++count;
+
+    return count >= required;
+}
+
 uint32 Player::GetSpec(int8 spec)
 {
     uint32 mostTalentTabId = 0;

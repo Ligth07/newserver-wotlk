@@ -293,7 +293,9 @@ public:
     [[nodiscard]] bool   IsRaidQuest(Difficulty difficulty) const;
     [[nodiscard]] bool   IsAllowedInRaid(Difficulty difficulty) const;
     [[nodiscard]] bool   IsDFQuest() const { return SpecialFlags & QUEST_SPECIAL_FLAGS_DF_QUEST; }
-    [[nodiscard]] bool   IsPVPQuest() const { return Type == QUEST_TYPE_PVP; }
+    [[nodiscard]] bool   IsPVPQuest()   const { return Type == QUEST_TYPE_PVP; }
+    [[nodiscard]] bool   IsGuildQuest() const { return ZoneOrSort == -int32(QUEST_SORT_GUILD); }
+    [[nodiscard]] uint8  GetRequiredGuildMembers() const { return RequiredGuildMembers; }
     [[nodiscard]] uint32 CalculateHonorGain(uint8 level) const;
 
     // multiple values
@@ -403,6 +405,7 @@ protected:
     uint32 StartItemCount         = 0;
     uint32 RewardMailSenderEntry  = 0;
     uint32 SpecialFlags           = 0; // custom flags, not sniffed/WDB
+    uint8  RequiredGuildMembers   = 0;
 };
 
 struct QuestStatusData

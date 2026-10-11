@@ -64,6 +64,11 @@ void ScriptMgr::OnCreate(Group* group, Player* leader)
     CALL_ENABLED_HOOKS(GroupScript, GROUPHOOK_ON_CREATE, script->OnCreate(group, leader));
 }
 
+bool ScriptMgr::OnArenaQueueAllowCrossTeamGroup(Group const* group, Player* member, uint32 arenaSlot)
+{
+    CALL_ENABLED_BOOLEAN_HOOKS_WITH_DEFAULT_FALSE(GroupScript, GROUPHOOK_ARENA_QUEUE_ALLOW_CROSS_TEAM, script->OnArenaQueueAllowCrossTeamGroup(group, member, arenaSlot));
+}
+
 GroupScript::GroupScript(char const* name, std::vector<uint16> enabledHooks)
     : ScriptObject(name, GROUPHOOK_END)
 {
