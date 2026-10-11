@@ -121,7 +121,7 @@ public:
 
     void RemovePlayer(ObjectGuid guid)
     {
-        for (uint8 slot = 0; slot < MAX_ARENA_SLOT; ++slot)
+        for (uint8 slot = 0; slot < SOLO_QUEUE_SLOT_COUNT; ++slot)
         {
             auto& list = _pending[slot];
             list.erase(
@@ -133,18 +133,18 @@ public:
 
     void Update()
     {
-        static constexpr uint8 arenaTypes[MAX_ARENA_SLOT] = {
+        static constexpr uint8 arenaTypes[SOLO_QUEUE_SLOT_COUNT] = {
             ARENA_TYPE_2v2, ARENA_TYPE_3v3, ARENA_TYPE_5v5
         };
 
-        for (uint8 slot = 0; slot < MAX_ARENA_SLOT; ++slot)
+        for (uint8 slot = 0; slot < SOLO_QUEUE_SLOT_COUNT; ++slot)
             _TryPairSlot(slot, arenaTypes[slot]);
     }
 
 private:
-    static constexpr uint8 MAX_ARENA_SLOT = 3;
+    static constexpr uint8 SOLO_QUEUE_SLOT_COUNT = 3;
 
-    std::list<SoloPendingEntry> _pending[MAX_ARENA_SLOT];
+    std::list<SoloPendingEntry> _pending[SOLO_QUEUE_SLOT_COUNT];
 
     bool _IsPending(ObjectGuid guid, uint8 slot) const
     {
