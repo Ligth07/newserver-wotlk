@@ -706,9 +706,12 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPacket& recvData)
 
     recvData >> guid >> arenaslot >> asGroup >> isRated;
 
-    // can't queue for rated without a group
+    // can't queue for rated without a group unless a module implements solo-queue
     if (isRated && !asGroup)
+    {
+        sScriptMgr->OnArenaQueueHandleSoloRated(_player, arenaslot);
         return;
+    }
 
     // ignore if we already in BG or BG queue
     if (_player->InBattleground())

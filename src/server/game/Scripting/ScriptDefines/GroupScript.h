@@ -31,6 +31,7 @@ enum GroupHook
     GROUPHOOK_ON_DISBAND,
     GROUPHOOK_CAN_GROUP_JOIN_BATTLEGROUND_QUEUE,
     GROUPHOOK_ON_CREATE,
+    GROUPHOOK_ARENA_QUEUE_ALLOW_CROSS_TEAM,
     GROUPHOOK_END
 };
 
@@ -62,6 +63,10 @@ public:
     [[nodiscard]] virtual bool CanGroupJoinBattlegroundQueue(Group const* /*group*/, Player* /*member*/, Battleground const* /*bgTemplate*/, uint32 /*MinPlayerCount*/, bool /*isRated*/, uint32 /*arenaSlot*/) { return true; }
 
     virtual void OnCreate(Group* /*group*/, Player* /*leader*/) { }
+
+    // Called when a rated-arena group contains a member whose arena team differs from the leader's.
+    // Return true to allow the cross-team member to join the queue anyway.
+    [[nodiscard]] virtual bool OnArenaQueueAllowCrossTeamGroup(Group const* /*group*/, Player* /*member*/, uint32 /*arenaSlot*/) { return false; }
 };
 
 #endif

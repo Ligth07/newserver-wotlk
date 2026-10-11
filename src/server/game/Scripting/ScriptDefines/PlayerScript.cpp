@@ -517,6 +517,11 @@ bool ScriptMgr::OnPlayerCanJoinInArenaQueue(Player* player, ObjectGuid Battlemas
     CALL_ENABLED_BOOLEAN_HOOKS(PlayerScript, PLAYERHOOK_CAN_JOIN_IN_ARENA_QUEUE, !script->OnPlayerCanJoinInArenaQueue(player, BattlemasterGuid, arenaslot, BGTypeID, joinAsGroup, IsRated, err));
 }
 
+void ScriptMgr::OnArenaQueueHandleSoloRated(Player* player, uint8 arenaslot)
+{
+    CALL_ENABLED_HOOKS(PlayerScript, PLAYERHOOK_ARENA_QUEUE_HANDLE_SOLO_RATED, script->OnArenaQueueHandleSoloRated(player, arenaslot));
+}
+
 bool ScriptMgr::OnPlayerCanBattleFieldPort(Player* player, uint8 arenaType, BattlegroundTypeId BGTypeID, uint8 action)
 {
     CALL_ENABLED_BOOLEAN_HOOKS(PlayerScript, PLAYERHOOK_CAN_BATTLEFIELD_PORT, !script->OnPlayerCanBattleFieldPort(player, arenaType, BGTypeID, action));
