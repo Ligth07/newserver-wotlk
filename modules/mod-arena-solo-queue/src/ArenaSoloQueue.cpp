@@ -14,10 +14,15 @@
  *
  * Player command: .arena2v2  (join/leave toggle)
  *
- * Phase-1 limitation: only the lead team's rating updates after the match;
- * personal rating and MMR for all players update correctly.
+ * Rating update strategy:
+ *   When solos from different teams are paired on the same side, only the lead
+ *   player's team (slot 0) is tracked in the GroupQueueInfo that the core uses.
+ *   The module stores a secondary-player map and uses ArenaScript::OnBeforeArenaTeamMemberUpdate
+ *   to trigger WonAgainst/LostAgainst + MemberWon/MemberLost on every secondary
+ *   team so ALL teams on a paired side get correct rating and stat updates.
  */
 
+#include "ArenaScript.h"
 #include "ArenaSeasonMgr.h"
 #include "ArenaTeam.h"
 #include "ArenaTeamMgr.h"
@@ -58,6 +63,14 @@ struct SoloPendingEntry
     uint32     matchmakerRating;
     uint32     prevOpponentsTeamId;
     uint32     joinTime;
+};
+
+// Maps the lead player of a paired side to any secondary players on that side.
+// Used to update secondary teams (those not tracked in GroupQueueInfo) at match end.
+struct SecondaryEntry
+{
+    ObjectGuid playerGuid;
+    uint32     arenaTeamId;
 };
 
 // ---------------------------------------------------------------------------
@@ -137,6 +150,22 @@ public:
                     [guid](SoloPendingEntry const& e) { return e.playerGuid == guid; }),
                 list.end());
         }
+        // Also remove any secondary mappings involving this player
+        _secondaryMap.erase(guid);
+        for (auto& [primary, secondaries] : _secondaryMap)
+            secondaries.erase(std::remove_if(secondaries.begin(), secondaries.end(),
+                [guid](SecondaryEntry const& e) { return e.playerGuid == guid; }), secondaries.end());
+    }
+
+    // Called from ArenaScript at match end to retrieve and clear secondaries for a primary player.
+    std::vector<SecondaryEntry> GetAndClearSecondaries(ObjectGuid primaryGuid)
+    {
+        auto it = _secondaryMap.find(primaryGuid);
+        if (it == _secondaryMap.end())
+            return {};
+        auto result = std::move(it->second);
+        _secondaryMap.erase(it);
+        return result;
     }
 
     bool IsPlayerPending(ObjectGuid guid, uint8 slot) const
@@ -161,6 +190,8 @@ private:
     static constexpr uint8 SOLO_QUEUE_SLOT_COUNT = 3;
 
     std::list<SoloPendingEntry> _pending[SOLO_QUEUE_SLOT_COUNT];
+    // primary player GUID → secondary players that were paired on the same side
+    std::map<ObjectGuid, std::vector<SecondaryEntry>> _secondaryMap;
 
     // Returns arenaType entries that should form one side.
     // Prefers grouping same-team members together so they are never placed on
@@ -319,6 +350,11 @@ private:
             }
         }
 
+        // Register secondary players so the ArenaScript hook can update their teams at match end.
+        // side[0] is the lead player (their team is in GroupQueueInfo); side[1..] are secondaries.
+        for (size_t i = 1; i < side.size(); ++i)
+            _secondaryMap[side[0]->playerGuid].push_back({ side[i]->playerGuid, side[i]->arenaTeamId });
+
         GroupQueueInfo* ginfo = bgQueue.AddGroup(
             leader, tempGroup, bgTypeId, bracketEntry,
             arenaType, true, false,
@@ -451,6 +487,79 @@ public:
 };
 
 // ---------------------------------------------------------------------------
+// ArenaScript — update secondary team ratings at match end
+// ---------------------------------------------------------------------------
+
+class ArenaSoloQueueArena : public ArenaScript
+{
+public:
+    // Enable only the one hook we need; not specifying hooks would enable all
+    // ArenaScript hooks which share a default of `return false` (block update).
+    ArenaSoloQueueArena() : ArenaScript("ArenaSoloQueueArena", { ARENAHOOK_ON_BEFORE_TEAM_MEMBER_UPDATE }) {}
+
+    // Called inside ArenaTeam::MemberWon / MemberLost for every team member.
+    // Returning true  → allow the primary team's update to proceed.
+    // Returning false → block the update (we never want that here).
+    bool OnBeforeArenaTeamMemberUpdate(ArenaTeam* /*team*/, Player* player, bool won,
+        uint32 opponentMatchmakerRating, int32 matchmakerChange) override
+    {
+        // Guard against re-entrancy when we call MemberWon/MemberLost below.
+        if (_handlingSecondary)
+            return true;
+
+        auto secondaries = sArenaSoloQueueMgr.GetAndClearSecondaries(player->GetGUID());
+        if (secondaries.empty())
+            return true;
+
+        Map const* bgMap = player->FindMap();
+
+        for (auto const& sec : secondaries)
+        {
+            Player* secPlayer = ObjectAccessor::FindConnectedPlayer(sec.playerGuid);
+            if (!secPlayer)
+                continue;
+
+            ArenaTeam* secTeam = sArenaTeamMgr->GetArenaTeamById(sec.arenaTeamId);
+            if (!secTeam)
+                continue;
+
+            // Use the secondary player's own MMR for proper rating-change computation.
+            ArenaTeamMember* secMember = secTeam->GetMember(secPlayer->GetGUID());
+            uint32 secOwnMMR = secMember ? secMember->MatchMakerRating : secTeam->GetRating();
+
+            _handlingSecondary = true;
+
+            int32 secRatingChange = 0;
+            int32 secMMRChange;
+            if (won)
+            {
+                secMMRChange = secTeam->WonAgainst(secOwnMMR, opponentMatchmakerRating, secRatingChange, bgMap);
+                secTeam->MemberWon(secPlayer, opponentMatchmakerRating, secMMRChange);
+            }
+            else
+            {
+                secMMRChange = secTeam->LostAgainst(secOwnMMR, opponentMatchmakerRating, secRatingChange, bgMap);
+                secTeam->MemberLost(secPlayer, opponentMatchmakerRating, secMMRChange);
+            }
+
+            _handlingSecondary = false;
+
+            // Persist secondary team stats — the core only saves the primary team.
+            secTeam->SaveToDB();
+
+            LOG_DEBUG("bg.battleground",
+                "ArenaSoloQueue: updated secondary team {} ({}) for player {} — won={} ratingChange={}",
+                secTeam->GetName(), sec.arenaTeamId, secPlayer->GetName(), won, secRatingChange);
+        }
+
+        return true;
+    }
+
+private:
+    bool _handlingSecondary = false;
+};
+
+// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 
@@ -460,4 +569,5 @@ void AddArenaSoloQueueScripts()
     new ArenaSoloQueuePlayer();
     new ArenaSoloQueueGroup();
     new ArenaSoloQueueCommand();
+    new ArenaSoloQueueArena();
 }
