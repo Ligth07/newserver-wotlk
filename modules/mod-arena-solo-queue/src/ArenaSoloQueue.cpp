@@ -22,6 +22,7 @@
  *   team so ALL teams on a paired side get correct rating and stat updates.
  */
 
+#include "AllBattlegroundScript.h"
 #include "ArenaScript.h"
 #include "ArenaSeasonMgr.h"
 #include "ArenaTeam.h"
@@ -168,6 +169,61 @@ public:
         return result;
     }
 
+    // Called from AllBattlegroundScript::OnAddGroup for every rated arena queue entry.
+    // Detects cross-team members and registers them as secondaries so their teams get
+    // rating updates at match end — covers both solo-paired groups and NPC cross-team groups.
+    void RegisterSecondaries(Player* leader, Group* group, uint32 arenaTeamId, uint8 arenaType)
+    {
+        if (!group || !leader || arenaTeamId == 0)
+            return;
+
+        uint8 slot = ArenaTeam::GetSlotByType(arenaType);
+
+        group->DoForAllMembers([&](Player* member)
+        {
+            if (!member || member->GetGUID() == leader->GetGUID())
+                return;
+            if (member->GetArenaTeamId(slot) != arenaTeamId)
+                _secondaryMap[leader->GetGUID()].push_back({ member->GetGUID(), member->GetArenaTeamId(slot) });
+        });
+    }
+
+    // Registers a temp group so CleanupTempGroups can disband it after a decline.
+    void TrackTempGroup(ObjectGuid::LowType groupGuid)
+    {
+        _tempGroups.insert(groupGuid);
+    }
+
+    // Disbands temp groups whose members are no longer in any rated BG queue.
+    // Called from WorldScript::OnUpdate every 5 s.
+    void CleanupTempGroups()
+    {
+        for (auto it = _tempGroups.begin(); it != _tempGroups.end(); )
+        {
+            Group* group = sGroupMgr->GetGroupByGUID(*it);
+            if (!group)
+            {
+                it = _tempGroups.erase(it);
+                continue;
+            }
+
+            bool anyInQueue = false;
+            group->DoForAllMembers([&anyInQueue](Player* member)
+            {
+                if (member && member->InBattlegroundQueue())
+                    anyInQueue = true;
+            });
+
+            if (!anyInQueue)
+            {
+                group->Disband();
+                it = _tempGroups.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
+
     bool IsPlayerPending(ObjectGuid guid, uint8 slot) const
     {
         for (auto const& e : _pending[slot])
@@ -189,9 +245,11 @@ public:
 private:
     static constexpr uint8 SOLO_QUEUE_SLOT_COUNT = 3;
 
-    std::list<SoloPendingEntry> _pending[SOLO_QUEUE_SLOT_COUNT];
+    std::list<SoloPendingEntry>                       _pending[SOLO_QUEUE_SLOT_COUNT];
     // primary player GUID → secondary players that were paired on the same side
     std::map<ObjectGuid, std::vector<SecondaryEntry>> _secondaryMap;
+    // GUIDs of temporary WoW groups created by the module for solo pairing
+    std::set<ObjectGuid::LowType>                     _tempGroups;
 
     // Returns arenaType entries that should form one side.
     // Prefers grouping same-team members together so they are never placed on
@@ -350,10 +408,8 @@ private:
             }
         }
 
-        // Register secondary players so the ArenaScript hook can update their teams at match end.
-        // side[0] is the lead player (their team is in GroupQueueInfo); side[1..] are secondaries.
-        for (size_t i = 1; i < side.size(); ++i)
-            _secondaryMap[side[0]->playerGuid].push_back({ side[i]->playerGuid, side[i]->arenaTeamId });
+        if (tempGroup)
+            TrackTempGroup(tempGroup->GetGUID().GetCounter());
 
         GroupQueueInfo* ginfo = bgQueue.AddGroup(
             leader, tempGroup, bgTypeId, bracketEntry,
@@ -406,6 +462,7 @@ public:
             return;
         _timer = 0;
         sArenaSoloQueueMgr.Update();
+        sArenaSoloQueueMgr.CleanupTempGroups();
     }
 
 private:
@@ -483,6 +540,31 @@ public:
 
         sArenaSoloQueueMgr.AddSolo(player, 0 /* slot 0 = 2v2 */);
         return true;
+    }
+};
+
+// ---------------------------------------------------------------------------
+// AllBattlegroundScript — detect cross-team members at queue entry
+// ---------------------------------------------------------------------------
+
+class ArenaSoloQueueBG : public AllBattlegroundScript
+{
+public:
+    ArenaSoloQueueBG() : AllBattlegroundScript("ArenaSoloQueueBG", { ALLBATTLEGROUNDHOOK_ON_ADD_GROUP }) {}
+
+    // Fires inside BattlegroundQueue::AddGroup for every queue entry (solo-paired
+    // temp groups AND cross-team NPC groups). Registers secondary players here so
+    // their teams receive rating updates at match end via the ArenaScript hook.
+    void OnAddGroup(BattlegroundQueue* /*queue*/, GroupQueueInfo* /*ginfo*/, uint32& /*index*/,
+        Player* leader, Group* group, BattlegroundTypeId /*bgTypeId*/,
+        PvPDifficultyEntry const* /*bracketEntry*/, uint8 arenaType, bool isRated,
+        bool /*isPremade*/, uint32 /*arenaRating*/, uint32 /*matchmakerRating*/,
+        uint32 arenaTeamId, uint32 /*opponentsArenaTeamId*/) override
+    {
+        if (!isRated || arenaType == 0)
+            return;
+
+        sArenaSoloQueueMgr.RegisterSecondaries(leader, group, arenaTeamId, arenaType);
     }
 };
 
@@ -569,5 +651,6 @@ void AddArenaSoloQueueScripts()
     new ArenaSoloQueuePlayer();
     new ArenaSoloQueueGroup();
     new ArenaSoloQueueCommand();
+    new ArenaSoloQueueBG();
     new ArenaSoloQueueArena();
 }
